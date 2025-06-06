@@ -548,6 +548,15 @@
         return;
       }
 
+      // Clear previous link and hide section immediately
+      shareableUrlDisplay.value = '';
+      shareableUrlSection.style.display = 'none';
+
+      // Disable button and show loading state
+      saveNoteBtn.disabled = true;
+      const originalButtonText = saveNoteBtn.textContent;
+      saveNoteBtn.textContent = 'Generating...';
+
       const noteId = 'note_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
       let encryptedContent = null;
       let isEncrypted = false;
@@ -560,6 +569,8 @@
         } catch (e) {
           showToast(e.message, 'error');
           console.error('Encryption failed:', e);
+          saveNoteBtn.disabled = false; // Re-enable button on error
+          saveNoteBtn.textContent = originalButtonText; // Restore button text
           return;
         }
       } else {
@@ -573,6 +584,10 @@
       };
 
       gun.get('simple-secret-notes').get(noteId).put(noteData, (ack) => {
+        // Re-enable button and restore text regardless of outcome
+        saveNoteBtn.disabled = false;
+        saveNoteBtn.textContent = originalButtonText;
+
         console.log('Gun.js ACK:', ack);
         if (ack && ack.err) {
           showToast(`Error publishing note: ${ack.err}`, 'error');
