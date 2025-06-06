@@ -330,9 +330,9 @@
     // --- View Retrieved Note Elements ---
     const viewNoteSection = document.getElementById('view-note-section');
     const retrievedNoteDisplay = document.getElementById('retrieved-note-display');
-    const decryptionInputContainer = document.getElementById('decryption-input-container'); // New element
-    const manualPassphraseInput = document.getElementById('manual-passphrase-input');       // New element
-    const decryptNoteBtn = document.getElementById('decrypt-note-btn');                     // New element
+    const decryptionInputContainer = document.getElementById('decryption-input-container');
+    const manualPassphraseInput = document.getElementById('manual-passphrase-input');
+    const decryptNoteBtn = document.getElementById('decrypt-note-btn');
     const ephemeralWarningContainer = document.getElementById('ephemeral-warning-container');
     const makeOwnNoteLinkContainer = document.getElementById('make-own-note-link-container');
     const makeOwnNoteLink = document.getElementById('make-own-note-link');
@@ -368,71 +368,99 @@
       }
     }
 
-    // Function to retrieve a note by ID and optional passphrase
-    async function performRetrieveNote(noteId, passphrase) {
-      currentDisplayedNoteId = noteId; // Store the ID for potential manual decryption
-      displayStatusMessage('Attempting retrieval...', 'default');
-      ephemeralWarningContainer.style.display = 'none'; // Ensure warning is hidden
-      decryptionInputContainer.style.display = 'none'; // Ensure decryption input is hidden initially
+    // Function to handle initial retrieval and display state (no automatic decryption from URL key)
+    async function performRetrieveNote(noteId) {
+        currentDisplayedNoteId = noteId; // Store the ID for potential manual decryption
+        displayStatusMessage('Attempting retrieval...', 'default');
+        ephemeralWarningContainer.style.display = 'none';
+        decryptionInputContainer.style.display = 'none'; // Hide decryption input initially
 
-      gun.get('simple-secret-notes').get(noteId).once((data) => {
-        let contentToDisplay = null;
-        let displayType = 'error';
-        let decryptedContent = null; // To store result of decryption attempt
+        gun.get('simple-secret-notes').get(noteId).once((data) => {
+            let contentToDisplay = null;
+            let displayType = 'error';
 
-        if (data) {
-          if (data.isEncrypted) {
-            if (passphrase) {
-              try {
-                decryptedContent = decrypt(data.content, passphrase);
-                if (decryptedContent) {
-                  contentToDisplay = decryptedContent;
-                  displayType = 'success';
-                } else {
-                  contentToDisplay = 'Incorrect encryption key or decryption failed. Please try again.';
+            if (data) {
+                if (data.isEncrypted) {
+                    // If encrypted, always prompt for the key
+                    contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
+                    displayType = 'warning';
+                    decryptionInputContainer.style.display = 'flex'; // Show input field
+                    manualPassphraseInput.value = ''; // Clear previous attempts
+                    manualPassphraseInput.focus();
+                } else { // Not encrypted
+                    contentToDisplay = data.content;
+                    displayType = 'success';
+                    // Proceed to self-destruct for unencrypted notes immediately
+                    gun.get('simple-secret-notes').get(noteId).put(null, (ack) => {
+                        if (ack && ack.err) {
+                            console.error(`Error during note self-destruction:`, ack.err);
+                        } else {
+                            console.log(`Note ${noteId} successfully nullified from Gun.js.`);
+                        }
+                        ephemeralWarningContainer.style.display = 'block';
+                    });
                 }
-              } catch (e) {
-                contentToDisplay = 'Decryption error. Invalid encrypted data or key.';
-              }
             } else {
-              contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
-              displayType = 'warning';
+                contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
             }
-          } else { // Not encrypted
-            contentToDisplay = data.content;
-            displayType = 'success';
-          }
-        } else {
-          contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
-        }
 
-        displayStatusMessage(contentToDisplay, displayType);
+            displayStatusMessage(contentToDisplay, displayType);
+            viewNoteSection.style.display = 'flex';
+            makeOwnNoteLinkContainer.style.display = 'block';
+        });
+    }
 
-        // Conditional display of decryption input and ephemeral warning
-        if (data && data.isEncrypted && !decryptedContent) { // If encrypted and not yet decrypted successfully
-            decryptionInputContainer.style.display = 'flex'; // Show manual input field
-            manualPassphraseInput.value = ''; // Clear previous attempts
-            manualPassphraseInput.focus(); // Focus for user convenience
-            ephemeralWarningContainer.style.display = 'none'; // Hide warning if still encrypted
-        } else if (data && displayType === 'success') { // If successfully decrypted (or unencrypted)
-            decryptionInputContainer.style.display = 'none'; // Hide decryption input
-            // Nullify from Gun.js immediately
-            gun.get('simple-secret-notes').get(noteId).put(null, (ack) => {
-                if (ack && ack.err) {
-                    console.error(`Error during note self-destruction:`, ack.err);
-                } else {
-                    console.log(`Note ${noteId} successfully nullified from Gun.js.`);
+    // Function to handle decryption attempt after manual key input
+    async function tryDecryptNote(noteId, passphrase) {
+        displayStatusMessage('Attempting decryption...', 'default');
+        ephemeralWarningContainer.style.display = 'none';
+        decryptionInputContainer.style.display = 'flex'; // Keep showing during attempt
+
+        gun.get('simple-secret-notes').get(noteId).once((data) => {
+            let contentToDisplay = null;
+            let displayType = 'error';
+            let decryptedContent = null;
+
+            if (data && data.isEncrypted) {
+                try {
+                    decryptedContent = decrypt(data.content, passphrase);
+                    if (decryptedContent) {
+                        contentToDisplay = decryptedContent;
+                        displayType = 'success';
+                        // Successful decryption, proceed to self-destruct
+                        gun.get('simple-secret-notes').get(noteId).put(null, (ack) => {
+                            if (ack && ack.err) {
+                                console.error(`Error during note self-destruction:`, ack.err);
+                            } else {
+                                console.log(`Note ${noteId} successfully nullified from Gun.js.`);
+                            }
+                            ephemeralWarningContainer.style.display = 'block';
+                        });
+                        decryptionInputContainer.style.display = 'none'; // Hide input on success
+                    } else {
+                        contentToDisplay = 'Incorrect encryption key or decryption failed. Please try again.';
+                        displayType = 'error'; // Show as error status
+                        ephemeralWarningContainer.style.display = 'none';
+                    }
+                } catch (e) {
+                    contentToDisplay = 'Decryption error. Invalid encrypted data or key.';
+                    displayType = 'error';
+                    ephemeralWarningContainer.style.display = 'none';
                 }
-                ephemeralWarningContainer.style.display = 'block'; // Show warning
-            });
-        } else { // For other errors/warnings (e.g., note not found), hide both
-            decryptionInputContainer.style.display = 'none';
-            ephemeralWarningContainer.style.display = 'none';
-        }
+            } else if (data && !data.isEncrypted) { // This case should ideally not be hit if initial check works
+                contentToDisplay = 'This note is not encrypted. You do not need a key.';
+                displayType = 'warning';
+                ephemeralWarningContainer.style.display = 'none';
+                decryptionInputContainer.style.display = 'none'; // Hide input if not needed
+            } else { // Note not found or already consumed
+                contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
+                displayType = 'error';
+                ephemeralWarningContainer.style.display = 'none';
+                decryptionInputContainer.style.display = 'none'; // Hide input if not applicable
+            }
 
-        viewNoteSection.style.display = 'flex';
-        makeOwnNoteLinkContainer.style.display = 'block';
-      });
+            displayStatusMessage(contentToDisplay, displayType);
+        });
     }
 
     // --- Save Note Logic ---
@@ -477,14 +505,11 @@
           displayComposeStatusMessage(`Error publishing note: ${ack.err}`, 'error');
           console.error('Error saving note to network:', ack.err);
         } else {
+          // ALWAYS generate URL without the key, forcing manual entry for encrypted notes
           let shareableUrl = `${window.location.origin}${window.location.pathname}#noteId=${noteId}`;
-          if (isEncrypted && passphrase) {
-              shareableUrlDisplay.value = `${shareableUrl}&key=${encodeURIComponent(passphrase)}`;
-              console.log('Encrypted note saved, URL with key:', shareableUrlDisplay.value);
-          } else {
-              shareableUrlDisplay.value = shareableUrl;
-              console.log('Unencrypted note saved, URL:', shareableUrlDisplay.value);
-          }
+          shareableUrlDisplay.value = shareableUrl;
+          console.log('Note saved. Shareable URL (without key):', shareableUrlDisplay.value);
+
           displayComposeStatusMessage('Note published. Copy the link above to share.', 'success');
 
           shareableUrlSection.style.display = 'flex';
@@ -512,7 +537,7 @@
     decryptNoteBtn.onclick = () => {
         const manualPassphrase = manualPassphraseInput.value.trim();
         if (currentDisplayedNoteId && manualPassphrase) {
-            performRetrieveNote(currentDisplayedNoteId, manualPassphrase);
+            tryDecryptNote(currentDisplayedNoteId, manualPassphrase);
         } else {
             displayStatusMessage('Please enter an encryption key.', 'error');
             manualPassphraseInput.focus();
@@ -532,15 +557,17 @@
     document.addEventListener('DOMContentLoaded', () => {
         const hash = window.location.hash;
         let noteIdFromUrl = null;
-        let passphraseFromUrl = null;
+        // The passphraseFromUrl will still be parsed if present, but performRetrieveNote will no longer use it directly
+        // because we are forcing manual entry for encrypted notes.
+        let passphraseFromUrl = null; // Still needed for parsing, but its use is now implicitly removed from initial load.
 
         if (hash) {
             const params = new URLSearchParams(hash.substring(1));
             noteIdFromUrl = params.get('noteId');
-            passphraseFromUrl = params.get('key');
+            passphraseFromUrl = params.get('key'); // We still parse it, but performRetrieveNote won't use it for initial decrypt
         }
 
-        console.log('DOMContentLoaded - hash:', hash, 'noteIdFromUrl:', noteIdFromUrl, 'passphraseFromUrl:', passphraseFromUrl);
+        console.log('DOMContentLoaded - hash:', hash, 'noteIdFromUrl:', noteIdFromUrl, 'passphraseFromUrl (will be ignored for initial decrypt):', passphraseFromUrl);
 
         if (noteIdFromUrl) {
             console.log('Note ID found in URL. Showing view section.');
@@ -548,8 +575,10 @@
             viewNoteSection.style.display = 'flex';
             makeOwnNoteLinkContainer.style.display = 'block';
 
+            // Call performRetrieveNote WITHOUT passing passphraseFromUrl directly for decryption
+            // It will determine if the note is encrypted and prompt if necessary.
             setTimeout(() => {
-                performRetrieveNote(noteIdFromUrl, passphraseFromUrl);
+                performRetrieveNote(noteIdFromUrl);
             }, 100);
         } else {
             console.log('No Note ID in URL. Showing compose section.');
