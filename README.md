@@ -1,58 +1,51 @@
 # Self-Destructing Note Service
 
-A simple, client-side web application that allows you to create notes that self-destruct (are removed from the network) after they have been accessed and viewed. It uses a decentralized database for storage, making it resilient and censorship-resistant.
+A simple, secure, and ephemeral note-sharing service built on a decentralized network. Create secret messages that self-destruct after being read, ensuring your sensitive information remains private.
 
 ## ✨ Features
 
-* **Ephemeral Notes:** Messages are designed to be "burn after read," meaning they are deleted from the network immediately after a recipient successfully views them.
-* **Optional Encryption:** Secure your notes with an optional passphrase using AES encryption, ensuring only those with the key can decrypt and read the message.
-* **Shareable Links:** Generate a unique URL for each note, which can be easily shared with intended recipients. Encryption keys can be included directly in the URL for seamless access.
-* **Decentralized Storage:** Powered by [Gun.js](https://gun.eco/), notes are stored on a peer-to-peer network, eliminating the need for a central server and enhancing availability.
-* **Client-Side:** All note creation, encryption, decryption, and deletion logic runs directly in the user's browser.
+* **Self-Destructing Notes:** Notes are automatically deleted from the network after their first retrieval, ensuring ephemeral communication.
+* **Optional Encryption:** Protect your notes with an AES-256 encryption key. If an encryption key is used, the note will only decrypt and self-destruct upon successful entry of the correct key.
+* **Decentralized:** Built on **Gun.js**, this service leverages a peer-to-peer network, offering resilience and eliminating a central point of failure for note storage.
+* **Client-Side Encryption:** All encryption and decryption happen directly in your browser. Encryption keys are never sent to the network.
+* **No Accounts, No Tracking:** Absolutely no user accounts, personal data collection, or tracking.
+* **Simple & Fast:** A straightforward interface for quick note creation and access.
 
-## 🚀 How to Use
+## 🚀 Live Demo
 
-### 1. Create a New Note
+Experience the Self-Destructing Note Service live here:
+**[https://jlaiii.github.io/Self-Destructing-Note-Service/](https://jlaiii.github.io/Self-Destructing-Note-Service/)**
 
-1.  Open the application in your web browser. You will see the "Create & Distribute Note" section by default.
-2.  **Enter your message:** Type or paste the content of your note into the large text area.
-3.  **Optional: Add an Encryption Key:** If you want to protect your note, enter a strong, memorable passphrase in the "Optional Encryption Key" field. If you leave this empty, the note will be stored unencrypted.
-4.  Click the "Generate Shareable Link" button.
-5.  A unique shareable link will appear below. Copy this link to share your note.
+## 💡 Why Open Source?
 
-### 2. Access / View a Note
+This project is open source for several key reasons:
 
-1.  To view a note, simply open the shareable link provided by the sender in your web browser.
-2.  The application will automatically attempt to retrieve the note.
-3.  **If the note is encrypted:** If the link includes the encryption key, the note will decrypt and display automatically. If the key is missing from the URL, you will be prompted that the note is encrypted and needs a key.
-4.  **Self-Destruction:** Once the note is successfully displayed, it is immediately deleted from the network. A warning message will confirm that the note has self-destructed and will no longer be accessible if you refresh the page or leave.
+* **Transparency:** The code is fully auditable, allowing anyone to verify that encryption is done client-side, keys are not stored, and notes truly self-destruct. This builds trust, especially for a security-sensitive application.
+* **Community Collaboration:** Encourages contributions, bug fixes, and feature enhancements from developers worldwide.
+* **Education:** Serves as a practical example of building a decentralized web application with Gun.js and client-side encryption.
+* **Freedom:** Ensures the tool remains free to use and adapt, without proprietary restrictions.
 
-### 3. Compose a New Note (After Viewing)
+## 🛠️ Technology Stack
 
-After viewing a note, you will see a "Compose a New Note" link. Clicking this will clear the current note view and return you to the note composition interface.
+* **Frontend:** Pure HTML, CSS, and JavaScript
+* **Decentralized Database:** **Gun.js** for peer-to-peer data storage and synchronization.
+* **Encryption:** **CryptoJS** for strong client-side AES-256 encryption.
 
-## 🔒 Security Considerations
+## 🧑‍💻 Development & Contribution
 
-* **Ephemeral Nature:** The core security mechanism of this service is its self-destructing nature. Once a note is viewed, it's gone from the network.
-* **Client-Side Encryption:** Encryption and decryption happen entirely in your browser. This means your passphrase never leaves your device.
-* **Key in URL:** For convenience, if you encrypt a note, the passphrase (encryption key) is included in the shareable URL. This is important to be aware of:
-    * Anyone who gains access to the full URL will also have the key to decrypt the message.
-    * Avoid sharing these URLs over insecure channels (e.g., public chat rooms, unencrypted email).
-    * Your browser's history might store the URL with the key.
+This is a single-file HTML application, making it incredibly easy to set up and run.
 
-## 🛠️ Technologies Used
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/jlaiii/Self-Destructing-Note-Service.git](https://github.com/jlaiii/Self-Destructing-Note-Service.git)
+    cd Self-Destructing-Note-Service
+    ```
+2.  **Open `index.html`:** Simply open the `index.html` file in your web browser. That's it!
 
-* **HTML, CSS, JavaScript:** Standard web technologies for the user interface and client-side logic.
-* **Gun.js:** A peer-to-peer, decentralized, and offline-first database.
-* **Crypto-JS:** A JavaScript library providing cryptographic algorithms, specifically AES for encryption/decryption in this project.
+### Contributing
 
-## 🚀 Future Enhancements (Ideas)
+Contributions are welcome! If you have suggestions for improvements, bug fixes, or new features, please open an issue or submit a pull request.
 
-* Add an option to set a time-to-live (TTL) for notes, allowing them to self-destruct after a certain period even if not viewed.
-* Implement client-side password hashing for encryption keys to avoid sending raw passphrases in the URL (though this would complicate sharing).
-* Add more robust error handling and user feedback.
-* Improve mobile responsiveness and overall UI/UX.
+## 📄 License
 
----
-
-Feel free to fork this repository and adapt it for your needs!
+This project is open-sourced under the MIT License. See the `LICENSE` file (if you choose to add one) for more details.
