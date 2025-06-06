@@ -315,7 +315,7 @@
   <div id="view-note-section">
     <h2 class="section-header">Access Note</h2>
     <div id="retrieved-note-display">
-      <p style="text-align: center; color: #777;">Retrieving content...</p>
+      <p style="text-align: center; color: #777;">Please wait, attempting to retrieve your note...</p>
     </div>
     <div id="decryption-input-container" style="display: none;">
         <input type="password" id="manual-passphrase-input" placeholder="Enter Encryption Key" autocomplete="off" />
@@ -346,7 +346,7 @@
         }
     }
 
-    // NEW Toast Message Function
+    // Toast Message Function
     function showToast(message, type = 'default', duration = 3000) {
         const toastContainer = document.getElementById('toast-container');
         const toast = document.createElement('div');
@@ -397,7 +397,7 @@
     const makeOwnNoteLink = document.getElementById('make-own-note-link');
 
     let currentDisplayedNoteId = null; // Global to store the note ID being viewed
-    const MAX_RETRIES = 3; // Max attempts to retrieve a note if not found immediately
+    const MAX_RETRIES = 5; // Max attempts to retrieve a note if not found immediately
     const RETRY_DELAY_MS = 1000; // Delay between retries in milliseconds
 
 
@@ -435,36 +435,19 @@
         ephemeralWarningContainer.style.display = 'none';
         decryptionInputContainer.style.display = 'none';
 
+        // Set initial/loading message only on first attempt
         if (retryAttempt === 0) {
-            displayStatusMessage('Attempting to retrieve note...', 'default');
-        } else {
-            displayStatusMessage(`Note not found yet. Retrying (${retryAttempt}/${MAX_RETRIES})...`, 'default');
-        }
-
-
-        // IMMEDIATE PROMPT IF URL INDICATES ENCRYPTION (only on first attempt)
-        if (encryptedFromUrl && retryAttempt === 0) {
-            displayStatusMessage('This note is encrypted. Please enter the key below to view.', 'warning');
-            decryptionInputContainer.style.display = 'flex'; // Show input field
-            manualPassphraseInput.value = ''; // Clear previous attempts
-            manualPassphraseInput.focus();
+            displayStatusMessage('Please wait, attempting to retrieve your note...', 'default');
         }
 
         gun.get('simple-secret-notes').get(noteId).once((data) => {
             if (data) { // Note data was found
                 if (data.isEncrypted) {
                     // Note is encrypted according to stored data.
-                    if (!encryptedFromUrl && retryAttempt === 0) { // Only update if URL didn't already make us prompt
-                        displayStatusMessage('This note is encrypted. Please enter the key below to view.', 'warning');
-                        decryptionInputContainer.style.display = 'flex';
-                        manualPassphraseInput.value = '';
-                        manualPassphraseInput.focus();
-                    }
-                    // Crucially, we do NOT attempt decryption here. That's for tryDecryptNote.
-                    // If it was encrypted, but the URL didn't specify, we still need to prompt.
-                    // If the URL did specify, the prompt is already there.
                     displayStatusMessage('This note is encrypted. Please enter the key below to view.', 'warning');
                     decryptionInputContainer.style.display = 'flex';
+                    manualPassphraseInput.value = '';
+                    manualPassphraseInput.focus();
 
                 } else { // Not encrypted (from stored data)
                     if (encryptedFromUrl) {
@@ -485,13 +468,13 @@
             } else { // Note data was NOT found (null or undefined)
                 if (retryAttempt < MAX_RETRIES) {
                     console.log(`Note ${noteId} not found on attempt ${retryAttempt}. Retrying...`);
-                    displayStatusMessage(`Note not found yet. Retrying (${retryAttempt + 1}/${MAX_RETRIES})...`, 'default');
+                    // We don't update the displayStatusMessage here to keep it cleaner
                     setTimeout(() => {
                         performRetrieveNote(noteId, encryptedFromUrl, retryAttempt + 1);
                     }, RETRY_DELAY_MS);
                 } else {
                     console.log(`Note ${noteId} not found after ${MAX_RETRIES} attempts.`);
-                    displayStatusMessage('Note not found or may have been previously accessed and self-destructed. If you just created this note, try refreshing the page in a few moments.', 'error');
+                    displayStatusMessage('Note not found or may have been previously accessed and self-destructed.', 'error');
                     decryptionInputContainer.style.display = 'none'; // Hide if note is truly gone
                 }
             }
