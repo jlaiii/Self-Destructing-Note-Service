@@ -270,7 +270,7 @@
   <h1>Self-Destructing Note Service</h1>
 
   <div id="compose-note">
-    <h2 class="section-header">Create & Distribute Note</h2>
+    <h2 class="section-header">Generate a One-Time Note</h2>
     <textarea id="note-content" placeholder="Enter your message here..." rows="8"></textarea>
     <input type="password" id="note-passphrase" placeholder="Optional Encryption Key (leave empty for unencrypted note)" autocomplete="new-password" />
     <button id="save-note-btn">Generate Shareable Link</button>
@@ -278,7 +278,7 @@
 
     <div id="shareable-url-section">
         <div class="share-row">
-            <p>Distribute this Link:</p>
+            <p>Here's your shareable link</p>
             <input type="text" id="shareable-url-display" readonly />
             <button id="copy-url-btn">Copy Link</button>
         </div>
@@ -553,7 +553,7 @@
           shareableUrlDisplay.value = shareableUrl;
           console.log('Note saved. Shareable URL:', shareableUrlDisplay.value);
 
-          displayComposeStatusMessage('Note published. Copy the link above to share.', 'success');
+          displayComposeStatusMessage('Your note is live! Copy the link to send it.', 'success');
 
           shareableUrlSection.style.display = 'flex';
           noteContentInput.value = '';
