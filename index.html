@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Self-Destructing Note Service</title>
+  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Inter', sans-serif;
+      background-color: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #333;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    #compose-note, #view-note-section {
+      width: 600px;
+      max-width: 100%;
+      margin-bottom: 20px;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      box-sizing: border-box;
+    }
+
+    /* Hide compose note by default in CSS, will be shown by JS on load */
+    #compose-note {
+        display: none;
+    }
+
+    /* Initially hide view note section, will be shown by JS on URL load */
+    #view-note-section {
+        display: none;
+    }
+
+    input[type=text], input[type=password], textarea {
+      flex: 1;
+      padding: 12px 15px;
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      font-size: 1em;
+      color: #495057;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      width: 100%;
+      box-sizing: border-box;
+      margin-bottom: 10px; /* Space below inputs */
+    }
+
+    input[type=text]:focus, input[type=password]:focus, textarea:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+      outline: none;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+      font-weight: 600;
+      white-space: nowrap;
+      width: 100%; /* Make buttons full width by default */
+      box-sizing: border-box; /* Include padding and border in the width */
+    }
+
+    button:hover:not(:disabled) {
+      background-color: #0056b3;
+      transform: translateY(-1px);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background-color: #a0a0a0;
+      cursor: not-allowed;
+    }
+
+    .section-header {
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #34495e;
+      font-size: 1.2em;
+      font-weight: 600;
+    }
+
+    #compose-note, #view-note-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #retrieved-note-display {
+      margin-top: 15px;
+      padding: 15px;
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      background-color: #f8f9fa;
+      min-height: 80px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 1em;
+      color: #495057;
+    }
+    #retrieved-note-display.encrypted-status {
+      border-left: 5px solid #ffc107;
+    }
+    #retrieved-note-display.decrypted-status {
+      border-left: 5px solid #28a745;
+    }
+    #retrieved-note-display.error-status {
+      border-left: 5px solid #dc3545;
+      color: #dc3545;
+    }
+
+    #compose-status-message {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        text-align: center;
+        display: none;
+        font-size: 0.9em;
+    }
+    #compose-status-message.error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    #compose-status-message.success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    #compose-status-message.default {
+        background-color: #e2e3e5;
+        color: #383d41;
+        border: 1px solid #d6d8db;
+    }
+
+
+    #shareable-url-section {
+        margin-top: 10px;
+        display: none;
+        width: 100%;
+        /* Adjusted for single block display */
+        flex-direction: column; /* Stack children vertically */
+        gap: 0; /* Remove gap from previous flex items */
+    }
+
+    .share-row {
+        margin-bottom: 0; /* No extra margin on the row itself */
+    }
+
+    .share-row p {
+        margin-bottom: 5px; /* Space between label and input */
+        font-size: 0.95em;
+        color: #555;
+        font-weight: 600;
+    }
+
+    /* Specific adjustments for the single input and button within share-row */
+    #shareable-url-display {
+        margin-bottom: 10px; /* Space between input and button */
+    }
+    #copy-url-btn {
+        margin-top: 0; /* Align with general button margin */
+    }
+
+
+    #make-own-note-link-container {
+        text-align: center;
+        margin-top: 15px;
+        display: none; /* Hidden by default, only shown when viewing a note */
+    }
+    #make-own-note-link {
+        color: #007bff;
+        text-decoration: none;
+        font-weight: bold;
+    }
+    #make-own-note-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Style for ephemeral warning */
+    .ephemeral-warning {
+        margin-top: 15px;
+        padding: 10px;
+        background-color: #fff3cd;
+        border: 1px solid #ffeeba;
+        border-radius: 5px;
+        color: #856404;
+        font-size: 0.9em;
+        text-align: center;
+    }
+
+
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+
+      h1 {
+        font-size: 1.8em;
+      }
+
+      #compose-note, #view-note-section {
+        width: 100%;
+        padding: 15px;
+      }
+
+      input[type=text], input[type=password], textarea {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      /* Ensure inputs and buttons are full width on small screens */
+      #shareable-url-display, #copy-url-btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Self-Destructing Note Service</h1>
+
+  <div id="compose-note">
+    <h2 class="section-header">Create & Distribute Note</h2>
+    <textarea id="note-content" placeholder="Enter your message here..." rows="8"></textarea>
+    <input type="password" id="note-passphrase" placeholder="Optional Encryption Key (leave empty for unencrypted note)" autocomplete="new-password" />
+    <button id="save-note-btn">Generate Shareable Link</button>
+    <div id="compose-status-message" class="default"></div>
+
+    <div id="shareable-url-section">
+        <div class="share-row">
+            <p>Distribute this Link:</p>
+            <input type="text" id="shareable-url-display" readonly />
+            <button id="copy-url-btn">Copy Link</button>
+        </div>
+        </div>
+  </div>
+
+  <div id="view-note-section">
+    <h2 class="section-header">Access Note</h2>
+    <div id="retrieved-note-display">
+      <p style="text-align: center; color: #777;">Retrieving content...</p>
+    </div>
+    <div id="ephemeral-warning-container" class="ephemeral-warning" style="display: none;">
+        ⚠️ This note has been successfully retrieved and self-destructed from the network. It will no longer be accessible after this session.
+    </div>
+    <div id="make-own-note-link-container">
+        <a href="#" id="make-own-note-link">Compose a New Note</a>
+    </div>
+  </div>
+
+  <script>
+    // Global function for messages in the VIEW section
+    function displayStatusMessage(message, type = 'default') {
+        const retrievedNoteDisplay = document.getElementById('retrieved-note-display');
+        retrievedNoteDisplay.textContent = message;
+        retrievedNoteDisplay.className = ''; // Clear existing classes
+        if (type === 'error') {
+            retrievedNoteDisplay.classList.add('error-status');
+        } else if (type === 'success') {
+            retrievedNoteDisplay.classList.add('decrypted-status');
+        } else if (type === 'warning') {
+            retrievedNoteDisplay.classList.add('encrypted-status');
+        }
+    }
+
+    // Global function for messages in the COMPOSE section
+    function displayComposeStatusMessage(message, type = 'default') {
+        const composeStatusMessage = document.getElementById('compose-status-message');
+        composeStatusMessage.textContent = message;
+        composeStatusMessage.className = type; // Use classes for styling
+        composeStatusMessage.style.display = 'block';
+        // Clear message after a few seconds
+        setTimeout(() => {
+            composeStatusMessage.style.display = 'none';
+            composeStatusMessage.textContent = '';
+        }, 5000);
+    }
+
+
+    const gun = Gun({
+      peers: ['https://gun-manhattan.herokuapp.com/gun']
+    });
+
+    // --- Compose Elements ---
+    const composeNoteSection = document.getElementById('compose-note');
+    const noteContentInput = document.getElementById('note-content');
+    const notePassphraseInput = document.getElementById('note-passphrase');
+    const saveNoteBtn = document.getElementById('save-note-btn');
+    const shareableUrlSection = document.getElementById('shareable-url-section');
+    const shareableUrlDisplay = document.getElementById('shareable-url-display');
+    const copyUrlBtn = document.getElementById('copy-url-btn');
+    const composeStatusMessage = document.getElementById('compose-status-message');
+
+    // --- View Retrieved Note Elements ---
+    const viewNoteSection = document.getElementById('view-note-section');
+    const retrievedNoteDisplay = document.getElementById('retrieved-note-display');
+    const ephemeralWarningContainer = document.getElementById('ephemeral-warning-container');
+    const makeOwnNoteLinkContainer = document.getElementById('make-own-note-link-container');
+    const makeOwnNoteLink = document.getElementById('make-own-note-link');
+
+
+    // --- Encryption/Decryption Functions ---
+    function encrypt(text, passphrase) {
+      if (!passphrase) {
+        return text;
+      }
+      try {
+        const encrypted = CryptoJS.AES.encrypt(text, passphrase).toString();
+        return encrypted;
+      } catch (e) {
+        throw new Error('Encryption failed. Verify message content or encryption key.');
+      }
+    }
+
+    function decrypt(encryptedText, passphrase) {
+      if (!passphrase) {
+        return null;
+      }
+      try {
+        const decrypted = CryptoJS.AES.decrypt(encryptedText, passphrase).toString(CryptoJS.enc.Utf8);
+        if (!decrypted) {
+            return null;
+        }
+        return decrypted;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Function to retrieve a note by ID and optional passphrase
+    async function performRetrieveNote(noteId, passphrase) {
+      displayStatusMessage('Attempting retrieval...', 'default');
+      ephemeralWarningContainer.style.display = 'none';
+
+      gun.get('simple-secret-notes').get(noteId).once((data) => {
+        let contentToDisplay = null;
+        let displayType = 'error';
+
+        if (data) {
+          if (data.isEncrypted) {
+            if (passphrase) {
+              try {
+                const decryptedContent = decrypt(data.content, passphrase);
+                if (decryptedContent) {
+                  contentToDisplay = decryptedContent;
+                  displayType = 'success';
+                } else {
+                  contentToDisplay = 'Incorrect encryption key or decryption failed.';
+                }
+              } catch (e) {
+                contentToDisplay = 'Decryption error. Invalid encrypted data or key.';
+              }
+            } else {
+              contentToDisplay = 'This note is encrypted. Provide the encryption key in the URL (e.g., #noteId=abc&key=xyz).';
+              displayType = 'warning';
+            }
+          } else { // Not encrypted
+            contentToDisplay = data.content;
+            displayType = 'success';
+          }
+        } else {
+          contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
+        }
+
+        displayStatusMessage(contentToDisplay, displayType);
+
+        if (data && displayType === 'success') {
+            gun.get('simple-secret-notes').get(noteId).put(null, (ack) => {
+                if (ack && ack.err) {
+                    console.error(`Error during note self-destruction:`, ack.err);
+                } else {
+                    console.log(`Note ${noteId} successfully nullified from Gun.js.`);
+                }
+                ephemeralWarningContainer.style.display = 'block';
+            });
+        } else {
+            ephemeralWarningContainer.style.display = 'none';
+        }
+        viewNoteSection.style.display = 'flex';
+        makeOwnNoteLinkContainer.style.display = 'block';
+      });
+    }
+
+    // --- Save Note Logic ---
+    saveNoteBtn.onclick = async () => {
+      console.log('Attempting to save note...');
+      const content = noteContentInput.value.trim();
+      const passphrase = notePassphraseInput.value.trim();
+
+      if (!content) {
+        displayComposeStatusMessage('Note content cannot be empty.', 'error');
+        console.warn('Note content is empty.');
+        return;
+      }
+
+      const noteId = 'note_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+      let encryptedContent = null;
+      let isEncrypted = false;
+
+      if (passphrase) {
+        try {
+          encryptedContent = encrypt(content, passphrase);
+          isEncrypted = true;
+          console.log('Note encrypted.');
+        } catch (e) {
+          displayComposeStatusMessage(e.message, 'error');
+          console.error('Encryption failed:', e);
+          return;
+        }
+      } else {
+          console.log('Note is not encrypted (no passphrase provided).');
+      }
+
+      const noteData = {
+        content: isEncrypted ? encryptedContent : content,
+        isEncrypted: isEncrypted,
+        timestamp: Date.now()
+      };
+
+      gun.get('simple-secret-notes').get(noteId).put(noteData, (ack) => {
+        console.log('Gun.js ACK:', ack);
+        if (ack && ack.err) {
+          displayComposeStatusMessage(`Error publishing note: ${ack.err}`, 'error');
+          console.error('Error saving note to network:', ack.err);
+        } else {
+          let shareableUrl = `${window.location.origin}${window.location.pathname}#noteId=${noteId}`;
+          if (isEncrypted && passphrase) {
+              shareableUrlDisplay.value = `${shareableUrl}&key=${encodeURIComponent(passphrase)}`;
+              console.log('Encrypted note saved, URL with key:', shareableUrlDisplay.value);
+          } else {
+              shareableUrlDisplay.value = shareableUrl;
+              console.log('Unencrypted note saved, URL:', shareableUrlDisplay.value);
+          }
+          // Note ID display removed as per user request
+          displayComposeStatusMessage('Note published. Copy the link above to share.', 'success');
+
+          shareableUrlSection.style.display = 'flex';
+          noteContentInput.value = '';
+          notePassphraseInput.value = '';
+          console.log('Shareable URL section displayed, input fields cleared.');
+        }
+      });
+    };
+
+    copyUrlBtn.onclick = () => {
+        const textToCopy = shareableUrlDisplay.value;
+        if (textToCopy) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                copyUrlBtn.textContent = 'Copied!';
+                setTimeout(() => copyUrlBtn.textContent = 'Copy Link', 1500);
+            }).catch(err => {
+                displayComposeStatusMessage('Failed to copy link. Please copy it manually from the field above.', 'error');
+                console.error('Failed to copy URL:', err);
+            });
+        }
+    };
+
+    // Removed copyIdBtn.onclick handler as per user request
+
+    // --- "Compose a New Note" link behavior ---
+    makeOwnNoteLink.onclick = (e) => {
+        e.preventDefault();
+        window.history.pushState(null, '', window.location.pathname);
+        window.location.reload();
+    };
+
+
+    // --- Auto-load from URL hash and Conditional Layout ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const hash = window.location.hash;
+        let noteIdFromUrl = null;
+        let passphraseFromUrl = null;
+
+        if (hash) {
+            const params = new URLSearchParams(hash.substring(1));
+            noteIdFromUrl = params.get('noteId');
+            passphraseFromUrl = params.get('key');
+        }
+
+        console.log('DOMContentLoaded - hash:', hash, 'noteIdFromUrl:', noteIdFromUrl, 'passphraseFromUrl:', passphraseFromUrl);
+
+        if (noteIdFromUrl) {
+            console.log('Note ID found in URL. Showing view section.');
+            composeNoteSection.style.display = 'none';
+            viewNoteSection.style.display = 'flex';
+            makeOwnNoteLinkContainer.style.display = 'block';
+
+            setTimeout(() => {
+                performRetrieveNote(noteIdFromUrl, passphraseFromUrl);
+            }, 100);
+        } else {
+            console.log('No Note ID in URL. Showing compose section.');
+            composeNoteSection.style.display = 'flex';
+            viewNoteSection.style.display = 'none';
+            makeOwnNoteLinkContainer.style.display = 'none';
+        }
+    });
+  </script>
+</body>
+</html>
