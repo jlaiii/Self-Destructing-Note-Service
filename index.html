@@ -202,14 +202,32 @@
         margin-top: 15px;
         display: none; /* Hidden by default, only shown when viewing a note */
     }
+    /* Styling the "Compose a New Note" link to look like a button */
     #make-own-note-link {
-        color: #007bff;
-        text-decoration: none;
-        font-weight: bold;
+        display: block; /* Make it a block element to take full width */
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-size: 1em;
+        cursor: pointer;
+        transition: background-color 0.2s ease, transform 0.1s ease;
+        font-weight: 600;
+        white-space: nowrap;
+        width: 100%;
+        box-sizing: border-box;
+        text-decoration: none; /* Remove underline for link */
     }
     #make-own-note-link:hover {
-        text-decoration: underline;
+        background-color: #0056b3;
+        transform: translateY(-1px);
+        text-decoration: none; /* Keep no underline on hover */
     }
+    #make-own-note-link:active {
+        transform: translateY(0);
+    }
+
 
     /* Style for ephemeral warning */
     .ephemeral-warning {
@@ -280,7 +298,7 @@
         ⚠️ This note has been successfully retrieved and self-destructed from the network. It will no longer be accessible after this session.
     </div>
     <div id="make-own-note-link-container">
-        <a href="#" id="make-own-note-link">Compose a New Note</a>
+        <a href="#" id="make-own-note-link">Create Another Secret Note</a>
     </div>
   </div>
 
@@ -368,12 +386,21 @@
       }
     }
 
-    // Function to handle initial retrieval and display state (no automatic decryption from URL key)
-    async function performRetrieveNote(noteId) {
-        currentDisplayedNoteId = noteId; // Store the ID for potential manual decryption
+    // Function to handle initial retrieval and display state
+    // Now accepts `encryptedFromUrl` to immediately prompt if the URL indicates encryption
+    async function performRetrieveNote(noteId, encryptedFromUrl = false) {
+        currentDisplayedNoteId = noteId;
         displayStatusMessage('Attempting retrieval...', 'default');
         ephemeralWarningContainer.style.display = 'none';
-        decryptionInputContainer.style.display = 'none'; // Hide decryption input initially
+        decryptionInputContainer.style.display = 'none';
+
+        // IMMEDIATE PROMPT IF URL INDICATES ENCRYPTION
+        if (encryptedFromUrl) {
+            displayStatusMessage('This note is encrypted. Please enter the key below to view.', 'warning');
+            decryptionInputContainer.style.display = 'flex'; // Show input field
+            manualPassphraseInput.value = ''; // Clear previous attempts
+            manualPassphraseInput.focus();
+        }
 
         gun.get('simple-secret-notes').get(noteId).once((data) => {
             let contentToDisplay = null;
@@ -381,13 +408,22 @@
 
             if (data) {
                 if (data.isEncrypted) {
-                    // If encrypted, always prompt for the key
-                    contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
-                    displayType = 'warning';
-                    decryptionInputContainer.style.display = 'flex'; // Show input field
-                    manualPassphraseInput.value = ''; // Clear previous attempts
-                    manualPassphraseInput.focus();
-                } else { // Not encrypted
+                    // Note is encrypted according to stored data.
+                    // If we already prompted due to URL, ensure the prompt stays.
+                    // If the URL *didn't* say encrypted but data says it is, also prompt.
+                    if (!encryptedFromUrl) { // Only update if URL didn't already make us prompt
+                        contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
+                        displayType = 'warning';
+                        decryptionInputContainer.style.display = 'flex';
+                        manualPassphraseInput.value = '';
+                        manualPassphraseInput.focus();
+                    }
+                    // Crucially, we do NOT attempt decryption here. That's for tryDecryptNote.
+                } else { // Not encrypted (from stored data)
+                    // If the URL mistakenly said it was encrypted, but the note isn't, display it directly.
+                    if (encryptedFromUrl) {
+                        displayStatusMessage('This note was marked as encrypted in the URL, but it is not. Displaying content.', 'warning');
+                    }
                     contentToDisplay = data.content;
                     displayType = 'success';
                     // Proceed to self-destruct for unencrypted notes immediately
@@ -399,9 +435,13 @@
                         }
                         ephemeralWarningContainer.style.display = 'block';
                     });
+                     // Hide the decryption input if it was shown but the note isn't encrypted
+                    decryptionInputContainer.style.display = 'none';
                 }
             } else {
                 contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
+                // If the URL indicated encryption but note is gone, hide prompt
+                decryptionInputContainer.style.display = 'none';
             }
 
             displayStatusMessage(contentToDisplay, displayType);
@@ -447,7 +487,7 @@
                     displayType = 'error';
                     ephemeralWarningContainer.style.display = 'none';
                 }
-            } else if (data && !data.isEncrypted) { // This case should ideally not be hit if initial check works
+            } else if (data && !data.isEncrypted) {
                 contentToDisplay = 'This note is not encrypted. You do not need a key.';
                 displayType = 'warning';
                 ephemeralWarningContainer.style.display = 'none';
@@ -505,10 +545,13 @@
           displayComposeStatusMessage(`Error publishing note: ${ack.err}`, 'error');
           console.error('Error saving note to network:', ack.err);
         } else {
-          // ALWAYS generate URL without the key, forcing manual entry for encrypted notes
+          // Generate URL with 'encrypted=true' flag if a passphrase was used
           let shareableUrl = `${window.location.origin}${window.location.pathname}#noteId=${noteId}`;
+          if (isEncrypted) {
+              shareableUrl += `&encrypted=true`;
+          }
           shareableUrlDisplay.value = shareableUrl;
-          console.log('Note saved. Shareable URL (without key):', shareableUrlDisplay.value);
+          console.log('Note saved. Shareable URL:', shareableUrlDisplay.value);
 
           displayComposeStatusMessage('Note published. Copy the link above to share.', 'success');
 
@@ -557,17 +600,15 @@
     document.addEventListener('DOMContentLoaded', () => {
         const hash = window.location.hash;
         let noteIdFromUrl = null;
-        // The passphraseFromUrl will still be parsed if present, but performRetrieveNote will no longer use it directly
-        // because we are forcing manual entry for encrypted notes.
-        let passphraseFromUrl = null; // Still needed for parsing, but its use is now implicitly removed from initial load.
+        let encryptedFromUrl = false; // New variable to check for the URL flag
 
         if (hash) {
             const params = new URLSearchParams(hash.substring(1));
             noteIdFromUrl = params.get('noteId');
-            passphraseFromUrl = params.get('key'); // We still parse it, but performRetrieveNote won't use it for initial decrypt
+            encryptedFromUrl = params.get('encrypted') === 'true'; // Check if 'encrypted' flag is true
         }
 
-        console.log('DOMContentLoaded - hash:', hash, 'noteIdFromUrl:', noteIdFromUrl, 'passphraseFromUrl (will be ignored for initial decrypt):', passphraseFromUrl);
+        console.log('DOMContentLoaded - hash:', hash, 'noteIdFromUrl:', noteIdFromUrl, 'encryptedFromUrl:', encryptedFromUrl);
 
         if (noteIdFromUrl) {
             console.log('Note ID found in URL. Showing view section.');
@@ -575,10 +616,9 @@
             viewNoteSection.style.display = 'flex';
             makeOwnNoteLinkContainer.style.display = 'block';
 
-            // Call performRetrieveNote WITHOUT passing passphraseFromUrl directly for decryption
-            // It will determine if the note is encrypted and prompt if necessary.
             setTimeout(() => {
-                performRetrieveNote(noteIdFromUrl);
+                // Pass the new `encryptedFromUrl` flag to performRetrieveNote
+                performRetrieveNote(noteIdFromUrl, encryptedFromUrl);
             }, 100);
         } else {
             console.log('No Note ID in URL. Showing compose section.');
