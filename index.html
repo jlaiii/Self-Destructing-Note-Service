@@ -163,28 +163,37 @@
         margin-top: 10px;
         display: none;
         width: 100%;
-        /* Adjusted for single block display */
-        flex-direction: column; /* Stack children vertically */
-        gap: 0; /* Remove gap from previous flex items */
+        flex-direction: column;
+        gap: 0;
     }
 
     .share-row {
-        margin-bottom: 0; /* No extra margin on the row itself */
+        margin-bottom: 0;
     }
 
     .share-row p {
-        margin-bottom: 5px; /* Space between label and input */
+        margin-bottom: 5px;
         font-size: 0.95em;
         color: #555;
         font-weight: 600;
     }
 
-    /* Specific adjustments for the single input and button within share-row */
     #shareable-url-display {
-        margin-bottom: 10px; /* Space between input and button */
+        margin-bottom: 10px;
     }
     #copy-url-btn {
-        margin-top: 0; /* Align with general button margin */
+        margin-top: 0;
+    }
+
+    /* Styles for the new decryption input container */
+    #decryption-input-container {
+        display: flex; /* Will be flex when shown by JS */
+        flex-direction: column;
+        gap: 10px; /* Space between input and button */
+        margin-top: 15px;
+    }
+    #decryption-input-container input[type="password"] {
+        margin-bottom: 0; /* Remove default margin-bottom as gap handles it */
     }
 
 
@@ -233,7 +242,6 @@
         width: 100%;
         margin-bottom: 10px;
       }
-      /* Ensure inputs and buttons are full width on small screens */
       #shareable-url-display, #copy-url-btn {
         width: 100%;
       }
@@ -256,13 +264,17 @@
             <input type="text" id="shareable-url-display" readonly />
             <button id="copy-url-btn">Copy Link</button>
         </div>
-        </div>
+    </div>
   </div>
 
   <div id="view-note-section">
     <h2 class="section-header">Access Note</h2>
     <div id="retrieved-note-display">
       <p style="text-align: center; color: #777;">Retrieving content...</p>
+    </div>
+    <div id="decryption-input-container" style="display: none;">
+        <input type="password" id="manual-passphrase-input" placeholder="Enter Encryption Key" autocomplete="off" />
+        <button id="decrypt-note-btn">Decrypt Note</button>
     </div>
     <div id="ephemeral-warning-container" class="ephemeral-warning" style="display: none;">
         ⚠️ This note has been successfully retrieved and self-destructed from the network. It will no longer be accessible after this session.
@@ -318,9 +330,14 @@
     // --- View Retrieved Note Elements ---
     const viewNoteSection = document.getElementById('view-note-section');
     const retrievedNoteDisplay = document.getElementById('retrieved-note-display');
+    const decryptionInputContainer = document.getElementById('decryption-input-container'); // New element
+    const manualPassphraseInput = document.getElementById('manual-passphrase-input');       // New element
+    const decryptNoteBtn = document.getElementById('decrypt-note-btn');                     // New element
     const ephemeralWarningContainer = document.getElementById('ephemeral-warning-container');
     const makeOwnNoteLinkContainer = document.getElementById('make-own-note-link-container');
     const makeOwnNoteLink = document.getElementById('make-own-note-link');
+
+    let currentDisplayedNoteId = null; // Global to store the note ID being viewed
 
 
     // --- Encryption/Decryption Functions ---
@@ -353,29 +370,32 @@
 
     // Function to retrieve a note by ID and optional passphrase
     async function performRetrieveNote(noteId, passphrase) {
+      currentDisplayedNoteId = noteId; // Store the ID for potential manual decryption
       displayStatusMessage('Attempting retrieval...', 'default');
-      ephemeralWarningContainer.style.display = 'none';
+      ephemeralWarningContainer.style.display = 'none'; // Ensure warning is hidden
+      decryptionInputContainer.style.display = 'none'; // Ensure decryption input is hidden initially
 
       gun.get('simple-secret-notes').get(noteId).once((data) => {
         let contentToDisplay = null;
         let displayType = 'error';
+        let decryptedContent = null; // To store result of decryption attempt
 
         if (data) {
           if (data.isEncrypted) {
             if (passphrase) {
               try {
-                const decryptedContent = decrypt(data.content, passphrase);
+                decryptedContent = decrypt(data.content, passphrase);
                 if (decryptedContent) {
                   contentToDisplay = decryptedContent;
                   displayType = 'success';
                 } else {
-                  contentToDisplay = 'Incorrect encryption key or decryption failed.';
+                  contentToDisplay = 'Incorrect encryption key or decryption failed. Please try again.';
                 }
               } catch (e) {
                 contentToDisplay = 'Decryption error. Invalid encrypted data or key.';
               }
             } else {
-              contentToDisplay = 'This note is encrypted. Provide the encryption key in the URL (e.g., #noteId=abc&key=xyz).';
+              contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
               displayType = 'warning';
             }
           } else { // Not encrypted
@@ -388,18 +408,28 @@
 
         displayStatusMessage(contentToDisplay, displayType);
 
-        if (data && displayType === 'success') {
+        // Conditional display of decryption input and ephemeral warning
+        if (data && data.isEncrypted && !decryptedContent) { // If encrypted and not yet decrypted successfully
+            decryptionInputContainer.style.display = 'flex'; // Show manual input field
+            manualPassphraseInput.value = ''; // Clear previous attempts
+            manualPassphraseInput.focus(); // Focus for user convenience
+            ephemeralWarningContainer.style.display = 'none'; // Hide warning if still encrypted
+        } else if (data && displayType === 'success') { // If successfully decrypted (or unencrypted)
+            decryptionInputContainer.style.display = 'none'; // Hide decryption input
+            // Nullify from Gun.js immediately
             gun.get('simple-secret-notes').get(noteId).put(null, (ack) => {
                 if (ack && ack.err) {
                     console.error(`Error during note self-destruction:`, ack.err);
                 } else {
                     console.log(`Note ${noteId} successfully nullified from Gun.js.`);
                 }
-                ephemeralWarningContainer.style.display = 'block';
+                ephemeralWarningContainer.style.display = 'block'; // Show warning
             });
-        } else {
+        } else { // For other errors/warnings (e.g., note not found), hide both
+            decryptionInputContainer.style.display = 'none';
             ephemeralWarningContainer.style.display = 'none';
         }
+
         viewNoteSection.style.display = 'flex';
         makeOwnNoteLinkContainer.style.display = 'block';
       });
@@ -455,7 +485,6 @@
               shareableUrlDisplay.value = shareableUrl;
               console.log('Unencrypted note saved, URL:', shareableUrlDisplay.value);
           }
-          // Note ID display removed as per user request
           displayComposeStatusMessage('Note published. Copy the link above to share.', 'success');
 
           shareableUrlSection.style.display = 'flex';
@@ -479,7 +508,17 @@
         }
     };
 
-    // Removed copyIdBtn.onclick handler as per user request
+    // --- Manual Decrypt Button Handler ---
+    decryptNoteBtn.onclick = () => {
+        const manualPassphrase = manualPassphraseInput.value.trim();
+        if (currentDisplayedNoteId && manualPassphrase) {
+            performRetrieveNote(currentDisplayedNoteId, manualPassphrase);
+        } else {
+            displayStatusMessage('Please enter an encryption key.', 'error');
+            manualPassphraseInput.focus();
+        }
+    };
+
 
     // --- "Compose a New Note" link behavior ---
     makeOwnNoteLink.onclick = (e) => {
