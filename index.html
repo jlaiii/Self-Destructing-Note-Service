@@ -134,31 +134,6 @@
       color: #dc3545;
     }
 
-    #compose-status-message {
-        margin-top: 10px;
-        padding: 10px;
-        border-radius: 5px;
-        text-align: center;
-        display: none;
-        font-size: 0.9em;
-    }
-    #compose-status-message.error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-    }
-    #compose-status-message.success {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-    }
-    #compose-status-message.default {
-        background-color: #e2e3e5;
-        color: #383d41;
-        border: 1px solid #d6d8db;
-    }
-
-
     #shareable-url-section {
         margin-top: 10px;
         display: none;
@@ -241,6 +216,51 @@
         text-align: center;
     }
 
+    /* --- Toast Message Styles --- */
+    #toast-container {
+        position: fixed;
+        top: 20px; /* Position from the top */
+        right: 20px; /* Position from the right */
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end; /* Align toasts to the right */
+        pointer-events: none;
+    }
+
+    .toast-message {
+        background-color: #333;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin-bottom: 10px; /* Space between multiple toasts */
+        font-size: 0.95em;
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        transform: translateY(-20px); /* Animate from slightly above */
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        max-width: 300px; /* Limit width for toasts */
+        text-align: center;
+        pointer-events: auto;
+    }
+
+    .toast-message.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .toast-message.success {
+        background-color: #28a745; /* Green */
+    }
+
+    .toast-message.error {
+        background-color: #dc3545; /* Red */
+    }
+
+    .toast-message.warning {
+        background-color: #ffc107; /* Yellow/Orange */
+        color: #333; /* Darker text for warning */
+    }
 
     @media (max-width: 768px) {
       body {
@@ -263,6 +283,14 @@
       #shareable-url-display, #copy-url-btn {
         width: 100%;
       }
+
+      #toast-container {
+        top: 10px; /* Adjust for smaller screens */
+        right: 10px; /* Adjust for smaller screens */
+      }
+      .toast-message {
+        max-width: 90%; /* Allow toasts to be wider on small screens */
+      }
     }
   </style>
 </head>
@@ -270,15 +298,14 @@
   <h1>Self-Destructing Note Service</h1>
 
   <div id="compose-note">
-    <h2 class="section-header">Generate a One-Time Note</h2>
+    <h2 class="section-header">Compose Your Secret Note</h2>
     <textarea id="note-content" placeholder="Enter your message here..." rows="8"></textarea>
     <input type="password" id="note-passphrase" placeholder="Optional Encryption Key (leave empty for unencrypted note)" autocomplete="new-password" />
     <button id="save-note-btn">Generate Shareable Link</button>
-    <div id="compose-status-message" class="default"></div>
 
     <div id="shareable-url-section">
         <div class="share-row">
-            <p>Here's your shareable link</p>
+            <p>Here's your shareable link:</p>
             <input type="text" id="shareable-url-display" readonly />
             <button id="copy-url-btn">Copy Link</button>
         </div>
@@ -302,6 +329,8 @@
     </div>
   </div>
 
+  <div id="toast-container"></div>
+
   <script>
     // Global function for messages in the VIEW section
     function displayStatusMessage(message, type = 'default') {
@@ -317,17 +346,30 @@
         }
     }
 
-    // Global function for messages in the COMPOSE section
-    function displayComposeStatusMessage(message, type = 'default') {
-        const composeStatusMessage = document.getElementById('compose-status-message');
-        composeStatusMessage.textContent = message;
-        composeStatusMessage.className = type; // Use classes for styling
-        composeStatusMessage.style.display = 'block';
-        // Clear message after a few seconds
+    // NEW Toast Message Function
+    function showToast(message, type = 'default', duration = 3000) {
+        const toastContainer = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.classList.add('toast-message');
+        if (type !== 'default') {
+            toast.classList.add(type); // Add success, error, or warning class
+        }
+        toast.textContent = message;
+
+        // Prepend the new toast so it appears above previous ones
+        toastContainer.prepend(toast);
+
+        // Animate in
         setTimeout(() => {
-            composeStatusMessage.style.display = 'none';
-            composeStatusMessage.textContent = '';
-        }, 5000);
+            toast.classList.add('show');
+        }, 100); // Small delay to allow CSS transition to work
+
+        // Animate out and remove after duration
+        setTimeout(() => {
+            toast.classList.remove('show');
+            // Remove from DOM after transition completes
+            toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+        }, duration);
     }
 
 
@@ -343,7 +385,6 @@
     const shareableUrlSection = document.getElementById('shareable-url-section');
     const shareableUrlDisplay = document.getElementById('shareable-url-display');
     const copyUrlBtn = document.getElementById('copy-url-btn');
-    const composeStatusMessage = document.getElementById('compose-status-message');
 
     // --- View Retrieved Note Elements ---
     const viewNoteSection = document.getElementById('view-note-section');
@@ -387,7 +428,6 @@
     }
 
     // Function to handle initial retrieval and display state
-    // Now accepts `encryptedFromUrl` to immediately prompt if the URL indicates encryption
     async function performRetrieveNote(noteId, encryptedFromUrl = false) {
         currentDisplayedNoteId = noteId;
         displayStatusMessage('Attempting retrieval...', 'default');
@@ -409,8 +449,6 @@
             if (data) {
                 if (data.isEncrypted) {
                     // Note is encrypted according to stored data.
-                    // If we already prompted due to URL, ensure the prompt stays.
-                    // If the URL *didn't* say encrypted but data says it is, also prompt.
                     if (!encryptedFromUrl) { // Only update if URL didn't already make us prompt
                         contentToDisplay = 'This note is encrypted. Please enter the key below to view.';
                         displayType = 'warning';
@@ -418,9 +456,7 @@
                         manualPassphraseInput.value = '';
                         manualPassphraseInput.focus();
                     }
-                    // Crucially, we do NOT attempt decryption here. That's for tryDecryptNote.
                 } else { // Not encrypted (from stored data)
-                    // If the URL mistakenly said it was encrypted, but the note isn't, display it directly.
                     if (encryptedFromUrl) {
                         displayStatusMessage('This note was marked as encrypted in the URL, but it is not. Displaying content.', 'warning');
                     }
@@ -435,13 +471,11 @@
                         }
                         ephemeralWarningContainer.style.display = 'block';
                     });
-                     // Hide the decryption input if it was shown but the note isn't encrypted
-                    decryptionInputContainer.style.display = 'none';
+                    decryptionInputContainer.style.display = 'none'; // Hide the decryption input if it was shown but the note isn't encrypted
                 }
             } else {
                 contentToDisplay = 'Note not found or may have been previously accessed and self-destructed.';
-                // If the URL indicated encryption but note is gone, hide prompt
-                decryptionInputContainer.style.display = 'none';
+                decryptionInputContainer.style.display = 'none'; // If the URL indicated encryption but note is gone, hide prompt
             }
 
             displayStatusMessage(contentToDisplay, displayType);
@@ -510,7 +544,7 @@
       const passphrase = notePassphraseInput.value.trim();
 
       if (!content) {
-        displayComposeStatusMessage('Note content cannot be empty.', 'error');
+        showToast('Note content cannot be empty.', 'error');
         console.warn('Note content is empty.');
         return;
       }
@@ -525,7 +559,7 @@
           isEncrypted = true;
           console.log('Note encrypted.');
         } catch (e) {
-          displayComposeStatusMessage(e.message, 'error');
+          showToast(e.message, 'error');
           console.error('Encryption failed:', e);
           return;
         }
@@ -542,7 +576,7 @@
       gun.get('simple-secret-notes').get(noteId).put(noteData, (ack) => {
         console.log('Gun.js ACK:', ack);
         if (ack && ack.err) {
-          displayComposeStatusMessage(`Error publishing note: ${ack.err}`, 'error');
+          showToast(`Error publishing note: ${ack.err}`, 'error');
           console.error('Error saving note to network:', ack.err);
         } else {
           // Generate URL with 'encrypted=true' flag if a passphrase was used
@@ -553,7 +587,7 @@
           shareableUrlDisplay.value = shareableUrl;
           console.log('Note saved. Shareable URL:', shareableUrlDisplay.value);
 
-          displayComposeStatusMessage('Your note is live! Copy the link to send it.', 'success');
+          showToast('Your note is live! Copy the link to send it.', 'success');
 
           shareableUrlSection.style.display = 'flex';
           noteContentInput.value = '';
@@ -569,8 +603,9 @@
             navigator.clipboard.writeText(textToCopy).then(() => {
                 copyUrlBtn.textContent = 'Copied!';
                 setTimeout(() => copyUrlBtn.textContent = 'Copy Link', 1500);
+                showToast('Link copied to clipboard!', 'success');
             }).catch(err => {
-                displayComposeStatusMessage('Failed to copy link. Please copy it manually from the field above.', 'error');
+                showToast('Failed to copy link. Please copy it manually.', 'error');
                 console.error('Failed to copy URL:', err);
             });
         }
@@ -582,6 +617,7 @@
         if (currentDisplayedNoteId && manualPassphrase) {
             tryDecryptNote(currentDisplayedNoteId, manualPassphrase);
         } else {
+            // Keep existing displayStatusMessage for primary content area, not toast for this case
             displayStatusMessage('Please enter an encryption key.', 'error');
             manualPassphraseInput.focus();
         }
